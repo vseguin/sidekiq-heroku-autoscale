@@ -1,6 +1,7 @@
+# frozen_string_literal: true
+
 module Sidekiq
   module HerokuAutoscale
-
     class ScaleStrategy
       attr_accessor :mode, :max_dynos, :workers_per_dyno, :min_factor
 
@@ -21,7 +22,7 @@ module Sidekiq
       end
 
       def binary(sys)
-        sys.has_work? ? @max_dynos : 0
+        sys.work? ? @max_dynos : 0
       end
 
       def linear(sys)
@@ -36,7 +37,8 @@ module Sidekiq
         requested_capacity_percentage = sys.total_work / total_capacity
 
         # Scale requested capacity taking into account the minimum required
-        scale_factor = (requested_capacity_percentage - min_capacity_percentage) / (total_capacity - min_capacity_percentage)
+        scale_factor = (requested_capacity_percentage - min_capacity_percentage) /
+                       (total_capacity - min_capacity_percentage)
         scale_factor = 0 if scale_factor.nan? # Handle DIVZERO
         scaled_capacity_percentage = scale_factor * total_capacity
 
@@ -48,6 +50,5 @@ module Sidekiq
         [minimum_dynos, maximum_dynos].min
       end
     end
-
   end
 end

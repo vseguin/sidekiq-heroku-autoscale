@@ -1,14 +1,17 @@
+# frozen_string_literal: true
+
 require 'sidekiq/api'
 
 module Sidekiq
   module HerokuAutoscale
-
     class QueueSystem
-      ALL_QUEUES = '*'.freeze
+      ALL_QUEUES = '*'
 
       attr_accessor :watch_queues, :include_retrying, :include_scheduled
 
-      def initialize(watch_queues: ALL_QUEUES, include_retrying: true, include_scheduled: true)
+      def initialize(watch_queues: ALL_QUEUES,
+                     include_retrying: true,
+                     include_scheduled: true)
         @watch_queues = [watch_queues].flatten.uniq
         @include_retrying = include_retrying
         @include_scheduled = include_scheduled
@@ -30,25 +33,29 @@ module Sidekiq
       def threads
         # work => { 'queue' => name, 'run_at' => timestamp, 'payload' => msg }
         worker_set = ::Sidekiq::Workers.new.to_a
-        worker_set = worker_set.select { |pid, tid, work| watch_queues.include?(work['queue']) } unless all_queues?
-        worker_set.length
+        unless all_queues?
+          worker_set = worker_set.select { |_pid, _tid, work| watch_queues.include?(work['queue']) }
+        end
+        worker_set.size
       end
 
       # number of jobs sitting in the active work queue
       def enqueued
         counts = all_queues? ? sidekiq_queues.values : sidekiq_queues.slice(*watch_queues).values
-        counts.map(&:to_i).reduce(&:+) || 0
+        counts.sum(&:to_i)
       end
 
       # number of jobs in the scheduled set
       def scheduled
         return 0 unless @include_scheduled
+
         count_jobs(::Sidekiq::ScheduledSet.new)
       end
 
       # number of jobs in the retry set
       def retrying
         return 0 unless @include_retrying
+
         count_jobs(::Sidekiq::RetrySet.new)
       end
 
@@ -56,8 +63,8 @@ module Sidekiq
         enqueued + scheduled + retrying + threads
       end
 
-      def has_work?
-        total_work > 0
+      def work?
+        total_work.positive?
       end
 
       # When scaling down workers, heroku stops the one with the highest number...
@@ -66,9 +73,11 @@ module Sidekiq
         quieted = false
         # processes have hostnames formatted as "worker.1", "worker.2", "sidekiq.1", etc...
         # this groups processes by type, then sorts by number, and then quiets beyond scale.
-        sidekiq_processes.group_by { |p| p['hostname'].split('.').first }.each_pair do |type, group|
+        sidekiq_processes.group_by { |p| p['hostname'].split('.').first }
+                         .each_pair do |_type, group|
           # there should only ever be a single group here (assuming setup validations were observed)
-          group.sort_by { |p| p['hostname'].split('.').last.to_i }.each_with_index do |process, index|
+          group.sort_by { |p| p['hostname'].split('.').last.to_i }
+               .each_with_index do |process, index|
             if index + 1 > scale && !process.stopping?
               process.quiet!
               quieted = true
@@ -86,17 +95,19 @@ module Sidekiq
       def sidekiq_processes
         process_set = ::Sidekiq::ProcessSet.new
         # select all processes with queues that intersect watched queues
-        process_set = process_set.select { |p| (p['queues'] & @watch_queues).any? } unless all_queues?
+        unless all_queues?
+          process_set = process_set.select { |p| (p['queues'] & @watch_queues).any? }
+        end
         process_set
       end
 
-    private
+      private
 
       def count_jobs(job_set)
         return job_set.size if all_queues?
+
         job_set.count { |j| watch_queues.include?(j.queue) }
       end
     end
-
   end
 end

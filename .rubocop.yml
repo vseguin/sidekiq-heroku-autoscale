@@ -1,0 +1,43 @@
+require:
+  - rubocop-rake
+  - rubocop-performance
+  - rubocop-minitest
+
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 2.5
+
+Style/PercentLiteralDelimiters:
+  PreferredDelimiters:
+    default: '[]'
+
+Style/DoubleNegation:
+  Enabled: no
+
+Style/Documentation:
+  Enabled: no
+
+Metrics/AbcSize:
+  Enabled: no
+
+Metrics/MethodLength:
+  Enabled: no
+
+Metrics/CyclomaticComplexity:
+  Enabled: no
+
+Metrics/PerceivedComplexity:
+  Enabled: no
+
+Metrics/ClassLength:
+  Enabled: no
+
+Naming/AccessorMethodName:
+  Enabled: no
+
+Metrics/BlockLength:
+  Exclude:
+    - 'test/**/*'
+
+Layout/LineLength:
+  Max: 100

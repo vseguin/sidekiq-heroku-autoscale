@@ -1,15 +1,26 @@
-require 'bundler/setup'
-Bundler.require(:default, :test)
+# frozen_string_literal: true
 
+require 'bundler/setup'
 require 'minitest/pride'
 require 'minitest/autorun'
-require 'sidekiq-heroku-autoscale'
+require 'mock_redis'
 
-Sidekiq.redis = Sidekiq::RedisConnection.create(:url => ENV.fetch('TEST_REDIS_URL', 'redis://localhost:9736'))
-Sidekiq.logger = ::Logger.new(STDOUT)
+require 'sidekiq/heroku_autoscale'
+
+redis_conn = proc { MockRedis.new }
+
+Sidekiq.configure_client do |config|
+  config.redis = ConnectionPool.new(size: 5, &redis_conn)
+end
+
+Sidekiq.configure_server do |config|
+  config.redis = ConnectionPool.new(size: 25, &redis_conn)
+end
+
+Sidekiq.logger = ::Logger.new($stdout)
 Sidekiq.logger.level = ::Logger::ERROR
 
-FIXTURES_PATH = File.expand_path("../fixtures", __FILE__)
+FIXTURES_PATH = File.expand_path('fixtures', __dir__)
 
 class TestQueueSystem
   attr_accessor :total_work, :dynos
@@ -19,8 +30,8 @@ class TestQueueSystem
     @dynos = dynos
   end
 
-  def has_work?
-    total_work > 0
+  def work?
+    total_work.positive?
   end
 end
 
@@ -30,11 +41,11 @@ end
 
 class TestClient
   class List
-    def list(app)
+    def list(_app)
       raise 'not implemented'
     end
 
-    def update(params)
+    def update(_params)
       raise 'not implemented'
     end
   end
@@ -42,21 +53,4 @@ class TestClient
   def formation
     @formation ||= List.new
   end
-end
-
-def assert_not(val)
-  assert !val
-end
-
-def assert_not_equal(exp, val)
-  assert exp != val
-end
-
-def assert_equal_times(a, b)
-  assert_equal a.to_i, b.to_i
-end
-
-def assert_raises_message(klass, pattern, &block)
-  err = assert_raises(klass, &block)
-  assert_match pattern, err.message
 end

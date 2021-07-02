@@ -1,26 +1,26 @@
+# frozen_string_literal: true
+
 module Sidekiq
   module HerokuAutoscale
-
     class Process
       WAKE_THROTTLE = PollInterval.new(:wait_for_update!, before_update: 2)
       SHUTDOWN_POLL = PollInterval.new(:wait_for_shutdown!, before_update: 10)
 
-      attr_reader :app_name, :name, :throttle, :history, :client
-      attr_reader :queue_system, :scale_strategy
+      attr_reader :app_name, :name, :throttle, :history, :client,
+                  :queue_system, :scale_strategy
 
-      attr_accessor :active_at, :updated_at, :quieted_at
-      attr_accessor :dynos, :quieted_to, :quiet_buffer
+      attr_accessor :active_at, :updated_at, :quieted_at, :dynos,
+                    :quieted_to, :quiet_buffer
 
-      def initialize(
-        name: 'worker',
-        app_name: nil,
-        client: nil,
-        throttle: 10, # 10 seconds
-        history: 3600, # 1 hour
-        quiet_buffer: 10,
-        system: {},
-        scale: {}
-      )
+      # rubocop:disable Metrics/ParameterLists
+      def initialize(name: 'worker',
+                     app_name: nil,
+                     client: nil,
+                     throttle: 10, # 10 seconds
+                     history: 3600, # 1 hour
+                     quiet_buffer: 10,
+                     system: {},
+                     scale: {})
         @app_name = app_name || name.to_s
         @name = name.to_s
         @client = client
@@ -37,13 +37,14 @@ module Sidekiq
         @history = history
         @quiet_buffer = quiet_buffer
       end
+      # rubocop:enable Metrics/ParameterLists
 
       def status
         if shutting_down?
           'stopping'
         elsif quieting?
           'quieting'
-        elsif @dynos > 0
+        elsif @dynos.positive?
           'running'
         else
           'stopped'
@@ -90,7 +91,7 @@ module Sidekiq
 
       # starts a quietdown period in which excess workers are quieted
       # no formation changes are allowed during a quietdown window.
-      def quietdown(to=0)
+      def quietdown(to = 0)
         quiet_to = [0, to].max
         quiet_at = Time.now.utc
         unless queue_system.quietdown!(quiet_to)
@@ -136,7 +137,7 @@ module Sidekiq
       # update the process with live dyno count from Heroku,
       # and then reassess workload and scale transitions.
       # this method shouldn't be called directly... just ping! it.
-      def update!(current=nil, target=nil)
+      def update!(current = nil, target = nil)
         current ||= fetch_dyno_count
 
         attrs = { dynos: current, updated_at: Time.now.utc }
@@ -156,7 +157,7 @@ module Sidekiq
 
           # idle
           if current == target
-            ::Sidekiq.logger.info("IDLE at #{ target } dynos")
+            ::Sidekiq.logger.info("IDLE at #{target} dynos")
             return current
 
           # upscale
@@ -165,7 +166,7 @@ module Sidekiq
 
           # quietdown
           elsif current > target
-            ::Sidekiq.logger.info("QUIET to #{ current - 1 } dynos")
+            ::Sidekiq.logger.info("QUIET to #{current - 1} dynos")
             quietdown(current - 1)
             # do NOT return...
             # allows downscale conditions to run during the same update
@@ -173,9 +174,7 @@ module Sidekiq
         end
 
         # downscale
-        if quieting? && fulfills_quietdown?
-          return set_dyno_count!(@quieted_to)
-        end
+        return set_dyno_count!(@quieted_to) if quieting? && fulfills_quietdown?
 
         current
       end
@@ -183,10 +182,10 @@ module Sidekiq
       # gets a live dyno count from Heroku
       def fetch_dyno_count
         if @client
-          @client.formation.list(app_name)
-            .select { |item| item['type'] == name }
-            .map { |item| item['quantity'] }
-            .reduce(0, &:+)
+          @client.formation
+                 .list(app_name)
+                 .select { |item| item['type'] == name }
+                 .sum { |item| item['quantity'] }
         else
           @dynos
         end
@@ -197,9 +196,12 @@ module Sidekiq
 
       # sets the live dyno count on Heroku
       def set_dyno_count!(count)
-        ::Sidekiq.logger.info("SCALE to #{ count } dynos")
-        @client.formation.update(app_name, name, { quantity: count }) if @client
-        set_attributes(dynos: count, quieted_to: nil, quieted_at: nil, history_at: Time.now.utc)
+        ::Sidekiq.logger.info("SCALE to #{count} dynos")
+        @client&.formation&.update(app_name, name, { quantity: count })
+        set_attributes(dynos: count,
+                       quieted_to: nil,
+                       quieted_at: nil,
+                       history_at: Time.now.utc)
         count
       rescue StandardError => e
         ::Sidekiq::HerokuAutoscale.exception_handler.call(e)
@@ -210,12 +212,9 @@ module Sidekiq
       def set_attributes(attrs)
         cache = {}
         prev_dynos = @dynos
-        if attrs.key?(:dynos)
-          cache['dynos'] = @dynos = attrs[:dynos]
-        end
-        if attrs.key?(:quieted_to)
-          cache['quieted_to'] = @quieted_to = attrs[:quieted_to]
-        end
+
+        cache['dynos'] = @dynos = attrs[:dynos] if attrs.key?(:dynos)
+        cache['quieted_to'] = @quieted_to = attrs[:quieted_to] if attrs.key?(:quieted_to)
         if attrs.key?(:quieted_at)
           @quieted_at = attrs[:quieted_at]
           cache['quieted_at'] = @quieted_at ? @quieted_at.to_i : nil
@@ -228,7 +227,7 @@ module Sidekiq
         ::Sidekiq.redis do |c|
           c.pipelined do
             # set new keys, delete expired keys
-            del, set = cache.partition { |k, v| v.nil? }
+            del, set = cache.partition { |_, v| v.nil? }
             c.hmset(cache_key, *set.flatten) if set.any?
             c.hdel(cache_key, *del.map(&:first)) if del.any?
 
@@ -236,9 +235,13 @@ module Sidekiq
               # set a dyno count history marker
               event_time = (attrs[:history_at].to_f / @throttle).floor * @throttle
               history_page = (attrs[:history_at].to_f / @history).floor * @history
-              history_key = "#{ cache_key }:#{ history_page }"
+              history_key = "#{cache_key}:#{history_page}"
 
-              c.hmset(history_key, (event_time - @throttle).to_s, prev_dynos, event_time.to_s, @dynos)
+              c.hmset(history_key,
+                      (event_time - @throttle).to_s,
+                      prev_dynos,
+                      event_time.to_s,
+                      @dynos)
               c.expire(history_key, @history * 2)
             end
           end
@@ -247,7 +250,7 @@ module Sidekiq
 
       # syncs configuration across process instances (dynos)
       def sync_attributes
-        if cache = ::Sidekiq.redis { |c| c.hgetall(cache_key) }
+        if (cache = ::Sidekiq.redis { |c| c.hgetall(cache_key) })
           @dynos = cache['dynos'] ? cache['dynos'].to_i : 0
           @quieted_to = cache['quieted_to'] ? cache['quieted_to'].to_i : nil
           @quieted_at = cache['quieted_at'] ? Time.at(cache['quieted_at'].to_i).utc : nil
@@ -261,6 +264,5 @@ module Sidekiq
         [self.class.name.gsub('::', '/').downcase, app_name, name].join(':')
       end
     end
-
   end
 end

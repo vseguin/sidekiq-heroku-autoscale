@@ -1,23 +1,24 @@
+# frozen_string_literal: true
+
 require 'test_helper'
 
 describe 'Sidekiq::HerokuAutoscale::Process' do
-  TEST_CONFIG = { app_name: 'test-this', name: 'sidekiq' }
-
   before do
-    Sidekiq.redis {|c| c.flushdb }
-    @subject = ::Sidekiq::HerokuAutoscale::Process.new(**TEST_CONFIG)
-    @subject2 = ::Sidekiq::HerokuAutoscale::Process.new(**TEST_CONFIG)
+    Sidekiq.redis(&:flushdb)
+    @config = { app_name: 'test-this', name: 'sidekiq' }
+    @subject = ::Sidekiq::HerokuAutoscale::Process.new(**@config)
+    @subject2 = ::Sidekiq::HerokuAutoscale::Process.new(**@config)
   end
 
   describe 'throttled?' do
     it 'returns false when last update is blank' do
       @subject.updated_at = nil
-      assert_not @subject.throttled?
+      refute @subject.throttled?
     end
 
     it 'returns false when last update falls outside the throttle' do
       @subject.updated_at = Time.now.utc - 11
-      assert_not @subject.throttled?
+      refute @subject.throttled?
     end
 
     it 'returns true when last update falls within the throttle' do
@@ -30,19 +31,19 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
     it 'returns false when last activity is blank' do
       @subject.active_at = nil
       @subject.updated_at = Time.now.utc - 1
-      assert_not @subject.updated_since_last_activity?
+      refute @subject.updated_since_last_activity?
     end
 
     it 'returns false when last update is blank' do
       @subject.active_at = Time.now.utc - 1
       @subject.updated_at = nil
-      assert_not @subject.updated_since_last_activity?
+      refute @subject.updated_since_last_activity?
     end
 
     it 'returns false when last update is before inquiry' do
       @subject.active_at = Time.now.utc - 10
       @subject.updated_at = @subject.active_at - 1
-      assert_not @subject.updated_since_last_activity?
+      refute @subject.updated_since_last_activity?
     end
 
     it 'returns true when last update is after inquiry' do
@@ -56,15 +57,15 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
     it 'returns false when quieting values not set' do
       @subject.quieted_to = nil
       @subject.quieted_at = nil
-      assert_not @subject.quieting?
+      refute @subject.quieting?
 
       @subject.quieted_to = 0
       @subject.quieted_at = nil
-      assert_not @subject.quieting?
+      refute @subject.quieting?
 
       @subject.quieted_to = nil
       @subject.quieted_at = Time.now.utc
-      assert_not @subject.quieting?
+      refute @subject.quieting?
     end
 
     it 'returns true when quieting values are set' do
@@ -79,7 +80,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
       @subject.quieted_to = 1
       @subject.quieted_at = Time.now.utc
       assert @subject.quieting?
-      assert_not @subject.shutting_down?
+      refute @subject.shutting_down?
 
       @subject.quieted_to = 0
       assert @subject.shutting_down?
@@ -89,14 +90,14 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
   describe 'fulfills_quietdown?' do
     it 'returns false without a quietdown time' do
       @subject.quieted_at = nil
-      assert_not @subject.fulfills_quietdown?
+      refute @subject.fulfills_quietdown?
     end
 
     it 'checks if last quietdown exceeds the buffer' do
       @subject.quiet_buffer = 10
 
       @subject.quieted_at = Time.now.utc - 9
-      assert_not @subject.fulfills_quietdown?
+      refute @subject.fulfills_quietdown?
 
       @subject.quieted_at = Time.now.utc - 11
       assert @subject.fulfills_quietdown?
@@ -121,7 +122,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
       @subject.set_attributes(quieted_to: nil)
       cached = Sidekiq.redis { |c| c.hgetall(@subject.cache_key) }
       assert @subject.quieted_to.nil?
-      assert_not cached.key?('quieted_to')
+      refute cached.key?('quieted_to')
     end
 
     it 'sets and clears a quieted-at time' do
@@ -133,7 +134,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
       @subject.set_attributes(quieted_at: nil)
       cached = Sidekiq.redis { |c| c.hgetall(@subject.cache_key) }
       assert @subject.quieted_at.nil?
-      assert_not cached.key?('quieted_at')
+      refute cached.key?('quieted_at')
     end
 
     it 'sets and clears an updated-at time' do
@@ -145,7 +146,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
       @subject.set_attributes(updated_at: nil)
       cached = Sidekiq.redis { |c| c.hgetall(@subject.cache_key) }
       assert @subject.updated_at.nil?
-      assert_not cached.key?('updated_at')
+      refute cached.key?('updated_at')
     end
   end
 
@@ -155,17 +156,22 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
       quieted_to = 1
       quieted_at = Time.now.utc - 10
       updated_at = quieted_at + 1
-      @subject2.set_attributes(dynos: dynos, quieted_to: quieted_to, quieted_at: quieted_at, updated_at: updated_at)
+      @subject2.set_attributes(dynos: dynos,
+                               quieted_to: quieted_to,
+                               quieted_at: quieted_at,
+                               updated_at: updated_at)
       @subject.sync_attributes
 
       assert_equal dynos, @subject.dynos
-      assert_equal_times quieted_to, @subject.quieted_to
-      assert_equal_times quieted_at, @subject.quieted_at
-      assert_equal_times updated_at, @subject.updated_at
+      assert_equal quieted_to.to_i, @subject.quieted_to.to_i
+      assert_equal updated_at.to_i, @subject.updated_at.to_i
     end
 
     it 'syncs empty attributes from the cache' do
-      @subject2.set_attributes(dynos: 2, quieted_to: 2, quieted_at: Time.now.utc, updated_at: Time.now.utc)
+      @subject2.set_attributes(dynos: 2,
+                               quieted_to: 2,
+                               quieted_at: Time.now.utc,
+                               updated_at: Time.now.utc)
       @subject.sync_attributes
       assert @subject.dynos
       assert @subject.quieted_to
@@ -175,9 +181,9 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
       @subject2.set_attributes(dynos: nil, quieted_to: nil, quieted_at: nil, updated_at: nil)
       @subject.sync_attributes
       assert_equal 0, @subject.dynos
-      assert_not @subject.quieted_to
-      assert_not @subject.quieted_at
-      assert_not @subject.updated_at
+      refute @subject.quieted_to
+      refute @subject.quieted_at
+      refute @subject.updated_at
     end
   end
 
@@ -191,7 +197,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
     it 'enables quietdown buffer after quieting workers' do
       @subject.queue_system.stub(:quietdown!, true) do
         @subject.quietdown(0)
-        assert_not @subject.fulfills_quietdown?
+        refute @subject.fulfills_quietdown?
       end
     end
 
@@ -217,7 +223,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
     it 'returns false when throttled' do
       @subject.updated_at = Time.now.utc - 9
-      assert_not @subject.wait_for_update!
+      refute @subject.wait_for_update!
     end
 
     it 'returns true when a syncronized update is newer than last activity' do
@@ -228,8 +234,8 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
     it 'returns false when a syncronized update is throttled' do
       @subject2.set_attributes(updated_at: Time.now.utc - 9)
-      assert_not @subject.wait_for_update!
-      assert_equal_times @subject.updated_at, @subject2.updated_at
+      refute @subject.wait_for_update!
+      assert_equal @subject.updated_at.to_i, @subject2.updated_at.to_i
     end
 
     it 'returns true when updated' do
@@ -244,21 +250,21 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
   describe 'wait_for_shutdown!' do
     it 'returns false when throttled' do
       @subject.updated_at = Time.now.utc - 9
-      assert_not @subject.wait_for_shutdown!
+      refute @subject.wait_for_shutdown!
     end
 
     it 'returns false when a syncronized update is throttled' do
       @subject.updated_at = Time.now.utc - 15
       @subject2.set_attributes(updated_at: Time.now.utc - 9)
 
-      assert_not @subject.wait_for_shutdown!
-      assert_equal_times @subject.updated_at, @subject2.updated_at
+      refute @subject.wait_for_shutdown!
+      assert_equal @subject.updated_at.to_i, @subject2.updated_at.to_i
     end
 
     it 'returns false when update returns dynos' do
       mock_update = MiniTest::Mock.new.expect(:call, 1)
       @subject.stub(:update!, mock_update) do
-        assert_not @subject.wait_for_shutdown!
+        refute @subject.wait_for_shutdown!
       end
       mock_update.verify
     end
@@ -275,7 +281,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
   describe 'update!' do
     it 'sets fetched dyno count and update timestamp' do
       assert_equal 0, @subject.dynos
-      assert_not @subject.updated_at
+      refute @subject.updated_at
 
       @subject.update!(1, 1)
       assert_equal 1, @subject.dynos
@@ -296,10 +302,10 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
     it 'starts quietdown when downscaling' do
       @subject.queue_system.stub(:quietdown!, true) do
-        assert_not @subject.quieting?
+        refute @subject.quieting?
         assert_equal 1, @subject.update!(1, 0)
         assert_equal 0, @subject.quieted_to
-        assert_not @subject.fulfills_quietdown?
+        refute @subject.fulfills_quietdown?
         assert @subject.quieting?
       end
     end
@@ -307,7 +313,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
     it 'immedaitely downscales when nothing was quieted' do
       @subject.queue_system.stub(:quietdown!, false) do
         assert_equal 0, @subject.update!(1, 0)
-        assert_not @subject.quieting?
+        refute @subject.quieting?
       end
     end
 
@@ -317,24 +323,28 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
       assert @subject.quieting?
       assert_equal 0, @subject.update!(1, 0)
-      assert_not @subject.quieting?
+      refute @subject.quieting?
     end
   end
 
   describe 'fetch_dyno_count' do
     before do
-      @subject = ::Sidekiq::HerokuAutoscale::Process.new(**TEST_CONFIG.merge(client: TestClient.new))
+      @subject = ::Sidekiq::HerokuAutoscale::Process.new(
+        **@config.merge(client: TestClient.new)
+      )
     end
 
     it 'fetches total dynos for a process type via PlatformAPI' do
-      @subject.client.formation.stub(:list, JSON.parse(File.read("#{ FIXTURES_PATH }/formation_list.json"))) do
+      @subject.client
+              .formation
+              .stub(:list, JSON.parse(File.read("#{FIXTURES_PATH}/formation_list.json"))) do
         assert_equal 2, @subject.fetch_dyno_count
       end
     end
 
     it 'handles errors with the universal exception handler' do
       called = false
-      ::Sidekiq::HerokuAutoscale.exception_handler = lambda { |ex| called = true }
+      ::Sidekiq::HerokuAutoscale.exception_handler = ->(_ex) { called = true }
       @subject.fetch_dyno_count
       assert called
     end
@@ -342,7 +352,9 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
   describe 'set_dyno_count!' do
     before do
-      @subject = ::Sidekiq::HerokuAutoscale::Process.new(**TEST_CONFIG.merge(client: TestClient.new))
+      @subject = ::Sidekiq::HerokuAutoscale::Process.new(
+        **@config.merge(client: TestClient.new)
+      )
     end
 
     it 'sets total dynos for a process type via PlatformAPI, and syncs count' do
@@ -357,7 +369,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
     it 'handles errors with the universal exception handler' do
       called = false
-      ::Sidekiq::HerokuAutoscale.exception_handler = lambda { |ex| called = true }
+      ::Sidekiq::HerokuAutoscale.exception_handler = ->(_ex) { called = true }
       @subject.set_dyno_count!(2)
       assert called
     end

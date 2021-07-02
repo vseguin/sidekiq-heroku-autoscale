@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 require 'test_helper'
 
 describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
   before do
-    Sidekiq.redis {|c| c.flushdb }
+    Sidekiq.redis(&:flushdb)
     @subject = ::Sidekiq::HerokuAutoscale::QueueSystem
   end
 
@@ -14,8 +16,8 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
 
     subject = @subject.new(watch_queues: '*', include_retrying: false, include_scheduled: false)
     assert_equal %w[*], subject.watch_queues
-    assert_not subject.include_retrying
-    assert_not subject.include_scheduled
+    refute subject.include_retrying
+    refute subject.include_scheduled
   end
 
   it 'assesses all_queues? status' do
@@ -26,7 +28,7 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
     assert subject.all_queues?
 
     subject = @subject.new(watch_queues: %w[default low])
-    assert_not subject.all_queues?
+    refute subject.all_queues?
   end
 
   describe 'dynos' do
@@ -184,16 +186,16 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
     end
   end
 
-  describe 'has_work?' do
+  describe 'work?' do
     it 'has no work while empty' do
       subject = @subject.new(watch_queues: '*')
-      assert_not subject.has_work?
+      refute subject.work?
     end
 
     it 'has work while active' do
       subject = @subject.new(watch_queues: '*')
       enqueue_jobs(%w[default])
-      assert subject.has_work?
+      assert subject.work?
     end
   end
 
@@ -202,8 +204,8 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
       subject = @subject.new(watch_queues: '*')
       process_workers('worker.1' => %w[default])
       stub_quietable(subject) do
-        assert_not subject.quietdown!(2)
-        assert_not subject.sidekiq_processes.find(&:stopping?)
+        refute subject.quietdown!(2)
+        refute subject.sidekiq_processes.find(&:stopping?)
       end
     end
 
@@ -211,8 +213,8 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
       subject = @subject.new(watch_queues: '*')
       process_workers('worker.1' => %w[default])
       stub_quietable(subject) do
-        assert_not subject.quietdown!(1)
-        assert_not subject.sidekiq_processes.find(&:stopping?)
+        refute subject.quietdown!(1)
+        refute subject.sidekiq_processes.find(&:stopping?)
       end
     end
 
@@ -230,7 +232,7 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
       process_workers('worker.3' => %w[low], 'worker.1' => %w[low], 'worker.2' => %w[low])
       stub_quietable(subject) do
         assert subject.quietdown!(1)
-        assert_not subject.sidekiq_processes.find { |p| p['hostname'] == 'worker.1' }.stopping?
+        refute subject.sidekiq_processes.find { |p| p['hostname'] == 'worker.1' }.stopping?
         assert subject.sidekiq_processes.find { |p| p['hostname'] == 'worker.2' }.stopping?
         assert subject.sidekiq_processes.find { |p| p['hostname'] == 'worker.3' }.stopping?
       end
@@ -251,7 +253,11 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
 
   def retry_jobs(queues)
     [queues].flatten.each do |queue|
-      payload = Sidekiq.dump_json({ 'queue' => queue, 'class' => TestWorker, 'args' => [SecureRandom.uuid] })
+      payload = Sidekiq.dump_json({
+                                    'queue' => queue,
+                                    'class' => TestWorker,
+                                    'args' => [SecureRandom.uuid]
+                                  })
       Sidekiq.redis { |c| c.zadd('retry', Time.now.to_f.to_s, payload) }
     end
   end
@@ -261,16 +267,31 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
   def process_workers(queues_by_process)
     # { 'worker.1' => ['default'], 'worker.2' => ['low'] }
     queues_by_process.each_with_index do |(process_name, queues), pindex|
-      key = "#{process_name}:#{ pindex }"
-      pdata = { 'pid' => pindex, 'hostname' => process_name, 'queues' => queues, 'started_at' => Time.now.to_f }
+      key = "#{process_name}:#{pindex}"
+      pdata = {
+        'pid' => pindex,
+        'hostname' => process_name,
+        'queues' => queues,
+        'started_at' => Time.now.to_f
+      }
       Sidekiq.redis do |c|
         c.sadd('processes', key)
-        c.hmset(key, 'info', Sidekiq.dump_json(pdata), 'busy', 0, 'beat', Time.now.to_f, 'quiet', process_name.start_with?('quiet'))
+        c.hmset(key,
+                'info',
+                Sidekiq.dump_json(pdata),
+                'busy',
+                0,
+                'beat',
+                Time.now.to_f,
+                'quiet',
+                process_name.start_with?('quiet'))
       end
 
       queues.each_with_index do |queue, tindex|
         wdata = { 'queue' => queue, 'payload' => {}, 'run_at' => Time.now.to_f }
-        Sidekiq.redis { |c| c.hmset("#{key}:workers", "1#{pindex}#{tindex}", Sidekiq.dump_json(wdata)) }
+        Sidekiq.redis do |c|
+          c.hmset("#{key}:workers", "1#{pindex}#{tindex}", Sidekiq.dump_json(wdata))
+        end
       end
     end
   end
@@ -280,7 +301,9 @@ describe 'Sidekiq::HerokuAutoscale::QueueSystem' do
   def stub_quietable(subject, &block)
     # map all process objects with self-flagging quiet! stubs
     quietable_processes = subject.sidekiq_processes.map do |process|
-      def process.quiet!; @attribs['quiet'] = 'true'; end
+      def process.quiet!
+        @attribs['quiet'] = 'true'
+      end
       process
     end
 

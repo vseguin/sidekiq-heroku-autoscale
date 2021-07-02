@@ -1,24 +1,28 @@
+# frozen_string_literal: true
+
+require 'sidekiq'
+
 require 'sidekiq/heroku_autoscale/heroku_app'
 require 'sidekiq/heroku_autoscale/middleware'
 require 'sidekiq/heroku_autoscale/poll_interval'
 require 'sidekiq/heroku_autoscale/process'
 require 'sidekiq/heroku_autoscale/queue_system'
 require 'sidekiq/heroku_autoscale/scale_strategy'
-require 'sidekiq/heroku_autoscale/version'
 
 module Sidekiq
   module HerokuAutoscale
-
     class << self
-      def app
-        @app
-      end
+      attr_reader :app
+      attr_writer :exception_handler
 
       def init(options)
         options = options.transform_keys(&:to_sym)
         @app = HerokuApp.new(**options)
 
-        ::Sidekiq.logger.warn('Heroku platform API is not configured for Sidekiq::HerokuAutoscale') unless @app.live?
+        unless @app.live?
+          ::Sidekiq.logger
+                   .warn('Heroku platform API is not configured for Sidekiq::HerokuAutoscale')
+        end
 
         # configure sidekiq queue server
         ::Sidekiq.configure_server do |config|
@@ -56,14 +60,11 @@ module Sidekiq
       end
 
       def exception_handler
-        @exception_handler ||= lambda { |ex|
+        @exception_handler ||= lambda do |ex|
           p ex
           puts ex.backtrace
-        }
+        end
       end
-
-      attr_writer :exception_handler
     end
-
   end
 end

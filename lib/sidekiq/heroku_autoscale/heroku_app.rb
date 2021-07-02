@@ -1,8 +1,9 @@
+# frozen_string_literal: true
+
 require 'platform-api'
 
 module Sidekiq
   module HerokuAutoscale
-
     class HerokuApp
       attr_reader :app_name, :throttle, :history
 
@@ -31,11 +32,16 @@ module Sidekiq
           @processes_by_name[name.to_s] = process
 
           process.queue_system.watch_queues.each do |queue_name|
-            # a queue may only be managed by a single heroku process type (to avoid scaling conflicts)
+            # a queue may only be managed by a single heroku process type
+            # (to avoid scaling conflicts)
             # thus, raise an error over duplicate queue names or when "*" isn't exclusive
-            if @processes_by_queue.key?(queue_name) || @processes_by_queue.key?('*') || (queue_name == '*' && @processes_by_queue.keys.any?)
-              raise ArgumentError, 'watched queues must be exclusive to a single Heroku process type'
+            if @processes_by_queue.key?(queue_name) ||
+               @processes_by_queue.key?('*') ||
+               (queue_name == '*' && @processes_by_queue.keys.any?)
+              raise ArgumentError,
+                    'watched queues must be exclusive to a single Heroku process type'
             end
+
             @processes_by_queue[queue_name] = process
           end
         end
@@ -79,12 +85,12 @@ module Sidekiq
             dynos: process.dynos,
             status: process.status,
             updated: process.updated_at.to_s,
-            history: histories[process.name],
+            history: histories[process.name]
           }
         end
       end
 
-      def history_stats(now=Time.now.utc)
+      def history_stats(now = Time.now.utc)
         # calculate a series time to anchor graph ticks on
         # the series snaps to thresholds of N (throttle duration)
         series_time = (now.to_f / @throttle).floor * @throttle
@@ -92,9 +98,11 @@ module Sidekiq
         first_tick = series_time - @throttle * num_ticks
 
         # all ticks is a hash of timestamp keys to plot
-        all_ticks = Array.new(num_ticks)
-          .each_with_index.map { |v, i| (first_tick + @throttle * i).to_s }
-          .each_with_object({}) { |tick, memo| memo[tick] = nil }
+        all_ticks = Array
+                    .new(num_ticks)
+                    .each_with_index
+                    .map { |_, i| (first_tick + @throttle * i).to_s }
+                    .each_with_object({}) { |tick, memo| memo[tick] = nil }
 
         # get current and previous history collections for each process
         # history pages snap to thresholds of M (history duration)
@@ -103,8 +111,8 @@ module Sidekiq
         history_pages = ::Sidekiq.redis do |c|
           c.pipelined do
             processes.each do |process|
-              c.hgetall("#{ process.cache_key }:#{ previous_page }")
-              c.hgetall("#{ process.cache_key }:#{ current_page }")
+              c.hgetall("#{process.cache_key}:#{previous_page}")
+              c.hgetall("#{process.cache_key}:#{current_page}")
             end
           end
         end
@@ -115,9 +123,9 @@ module Sidekiq
 
           # flatten all history pages into a single collection
           ticks = all_ticks
-            .merge(a.merge!(b))
-            .map { |k, v| [k.to_i, v ? v.to_i : nil] }
-            .sort_by { |tick| tick[0] }
+                  .merge(a.merge!(b))
+                  .map { |k, v| [k.to_i, v ? v.to_i : nil] }
+                  .sort_by { |tick| tick[0] }
 
           # separate the older stats from the current history timeframe
           past_ticks, present_ticks = ticks.partition { |tick| tick[0] < first_tick }
@@ -139,6 +147,5 @@ module Sidekiq
         history_by_process
       end
     end
-
   end
 end

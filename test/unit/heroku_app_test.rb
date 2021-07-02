@@ -1,9 +1,11 @@
+# frozen_string_literal: true
+
 require 'test_helper'
 require 'yaml'
 
 describe 'HerokuApp' do
   before do
-    Sidekiq.redis {|c| c.flushdb }
+    Sidekiq.redis(&:flushdb)
     ENV['SIDEKIQ_HEROKU_AUTOSCALE_API_TOKEN'] = 'humd1ng3r'
     ENV['SIDEKIQ_HEROKU_AUTOSCALE_APP'] = 'testing-app'
     @subject = ::Sidekiq::HerokuAutoscale::HerokuApp
@@ -11,7 +13,7 @@ describe 'HerokuApp' do
 
   describe 'new' do
     it 'builds app with options' do
-      config = YAML.load_file("#{ FIXTURES_PATH }/config.yml")
+      config = YAML.load_file("#{FIXTURES_PATH}/config.yml")
       app = @subject.new(config)
 
       assert_equal %w[default low high], app.queue_names
@@ -20,8 +22,8 @@ describe 'HerokuApp' do
       assert_equal 'test-app', first.app_name
       assert_equal 'first', first.name
       assert_equal %w[default low], first.queue_system.watch_queues
-      assert_not first.queue_system.include_retrying
-      assert_not first.queue_system.include_scheduled
+      refute first.queue_system.include_retrying
+      refute first.queue_system.include_scheduled
       assert_equal 'binary', first.scale_strategy.mode
       assert_equal 2, first.scale_strategy.max_dynos
       assert_equal 7200, first.history
@@ -42,46 +44,46 @@ describe 'HerokuApp' do
     end
 
     it 'fills in name/token with environment variables' do
-      app = @subject.new({
+      app = @subject.new(
         processes: {
           first: { system: { watch_queues: %w[low] } }
         }
-      })
+      )
       assert_equal 'testing-app', app.process_for_queue('low').app_name
       assert app.live?
     end
 
     it 'errors for queues shared across process types' do
-      assert_raises_message(ArgumentError, /must be exclusive/) do
-        @subject.new({
+      assert_raises(ArgumentError, /must be exclusive/) do
+        @subject.new(
           processes: {
             first: { system: { watch_queues: %w[low medium] } },
             second: { system: { watch_queues: %w[medium high] } }
           }
-        })
+        )
       end
     end
 
     it 'errors when all-queues is not exclusive' do
-      assert_raises_message(ArgumentError, /must be exclusive/) do
-        @subject.new({
+      assert_raises(ArgumentError, /must be exclusive/) do
+        @subject.new(
           processes: {
             first: { system: { watch_queues: '*' } },
             second: { system: { watch_queues: %w[high] } }
           }
-        })
+        )
       end
     end
   end
 
   describe 'process accessors' do
     before do
-      @app = @subject.new({
+      @app = @subject.new(
         processes: {
           first: { system: { watch_queues: %w[low] } },
           second: { system: { watch_queues: %w[med high] } }
         }
-      })
+      )
     end
 
     it 'lists process names' do
@@ -106,22 +108,22 @@ describe 'HerokuApp' do
 
   describe 'history_stats' do
     before do
-      @app = @subject.new({
+      @app = @subject.new(
         history: 100,
         throttle: 10,
         processes: {
           first: { system: { watch_queues: %w[low] } },
           second: { system: { watch_queues: %w[high] } }
         }
-      })
+      )
     end
 
     it 'generates a running history from present dynos' do
       @app.process_by_name('second').dynos = 1
       stats = @app.history_stats
 
-      assert_equal [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], stats['first'].map { |tick| tick[1] }
-      assert_equal [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], stats['second'].map { |tick| tick[1] }
+      assert_equal([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], stats['first'].map { |tick| tick[1] })
+      assert_equal([1, 1, 1, 1, 1, 1, 1, 1, 1, 1], stats['second'].map { |tick| tick[1] })
     end
 
     it 'generates a running history from logged data points' do
@@ -137,8 +139,8 @@ describe 'HerokuApp' do
       @app.process_by_name('second').set_attributes(dynos: 0, history_at: epoch - 40)
 
       stats = @app.history_stats(epoch)
-      assert_equal [1, 1, 1, 0, 0, 0, 0, 1, 1, 1], stats['first'].map { |tick| tick[1] }
-      assert_equal [1, 1, 1, 1, 1, 2, 0, 0, 0, 0], stats['second'].map { |tick| tick[1] }
+      assert_equal([1, 1, 1, 0, 0, 0, 0, 1, 1, 1], stats['first'].map { |tick| tick[1] })
+      assert_equal([1, 1, 1, 1, 1, 2, 0, 0, 0, 0], stats['second'].map { |tick| tick[1] })
     end
   end
 end
