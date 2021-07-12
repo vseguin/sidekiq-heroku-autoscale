@@ -5,8 +5,9 @@ module Sidekiq
     class ScaleStrategy
       attr_accessor :mode, :max_dynos, :workers_per_dyno, :min_factor
 
-      def initialize(mode: :binary, max_dynos: 1, workers_per_dyno: 25, min_factor: 0)
+      def initialize(mode: :binary, min_dynos: 0, max_dynos: 1, workers_per_dyno: 25, min_factor: 0)
         @mode = mode
+        @min_dynos = min_dynos
         @max_dynos = max_dynos
         @workers_per_dyno = workers_per_dyno
         @min_factor = min_factor
@@ -42,10 +43,9 @@ module Sidekiq
         scale_factor = 0 if scale_factor.nan? # Handle DIVZERO
         scaled_capacity_percentage = scale_factor * total_capacity
 
-        # don't scale down past number of currently engaged workers,
-        # and don't scale up past maximum dynos
+        # don't scale up past maximum dynos
         ideal_dynos = ([0, scaled_capacity_percentage].max * @max_dynos).ceil
-        minimum_dynos = [sys.dynos, ideal_dynos].max
+        minimum_dynos = [@min_dynos, ideal_dynos].max
         maximum_dynos = [minimum_dynos, @max_dynos].min
         [minimum_dynos, maximum_dynos].min
       end
