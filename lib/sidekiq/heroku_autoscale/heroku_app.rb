@@ -7,14 +7,17 @@ module Sidekiq
     class HerokuApp
       attr_reader :app_name, :throttle, :history
 
+      DEFAULT_HISTORY = 3_600 # 1 hour
+      DEFAULT_THROTTLE = 10
+
       # Builds process managers based on configuration (presumably loaded from YAML)
       def initialize(config)
         config = JSON.parse(JSON.generate(config), symbolize_names: true)
 
         api_token = config[:api_token] || ENV['SIDEKIQ_HEROKU_AUTOSCALE_API_TOKEN']
         @app_name = config[:app_name] || ENV['SIDEKIQ_HEROKU_AUTOSCALE_APP']
-        @throttle = config[:throttle] || 10
-        @history = config[:history] || 60 * 60 # 1 hour
+        @throttle = config[:throttle] || DEFAULT_THROTTLE
+        @history = config[:history] || DEFAULT_HISTORY
         @client = api_token ? PlatformAPI.connect_oauth(api_token) : nil
 
         @processes_by_name = {}

@@ -54,3 +54,8 @@ class TestClient
     @formation ||= List.new
   end
 end
+
+# Helper class to mock `Process` instances to test `PollInterval`
+TestPollIntervalProcess = Struct.new(:name, :rejectable, keyword_init: true) do
+  alias_method :reject?, :rejectable
+end

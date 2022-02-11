@@ -121,7 +121,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
       @subject.set_attributes(quieted_to: nil)
       cached = Sidekiq.redis { |c| c.hgetall(@subject.cache_key) }
-      assert @subject.quieted_to.nil?
+      assert_nil @subject.quieted_to
       refute cached.key?('quieted_to')
     end
 
@@ -133,7 +133,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
       @subject.set_attributes(quieted_at: nil)
       cached = Sidekiq.redis { |c| c.hgetall(@subject.cache_key) }
-      assert @subject.quieted_at.nil?
+      assert_nil @subject.quieted_at
       refute cached.key?('quieted_at')
     end
 
@@ -145,7 +145,7 @@ describe 'Sidekiq::HerokuAutoscale::Process' do
 
       @subject.set_attributes(updated_at: nil)
       cached = Sidekiq.redis { |c| c.hgetall(@subject.cache_key) }
-      assert @subject.updated_at.nil?
+      assert_nil @subject.updated_at
       refute cached.key?('updated_at')
     end
   end

@@ -5,7 +5,7 @@ require:
 
 AllCops:
   NewCops: enable
-  TargetRubyVersion: 2.5
+  TargetRubyVersion: 2.6
 
 Style/PercentLiteralDelimiters:
   PreferredDelimiters:
@@ -41,3 +41,6 @@ Metrics/BlockLength:
 
 Layout/LineLength:
   Max: 100
+
+Lint/AmbiguousOperatorPrecedence:
+  Enabled: no
