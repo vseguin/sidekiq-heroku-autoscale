@@ -7,18 +7,16 @@ require 'mock_redis'
 
 require 'sidekiq/heroku_autoscale'
 
-redis_conn = proc { MockRedis.new }
+logger = ::Logger.new($stdout)
+logger.level = ::Logger::ERROR
 
 Sidekiq.configure_client do |config|
-  config.redis = ConnectionPool.new(size: 5, &redis_conn)
+  config.logger = logger
 end
 
 Sidekiq.configure_server do |config|
-  config.redis = ConnectionPool.new(size: 25, &redis_conn)
+  config.logger = logger
 end
-
-Sidekiq.logger = ::Logger.new($stdout)
-Sidekiq.logger.level = ::Logger::ERROR
 
 FIXTURES_PATH = File.expand_path('fixtures', __dir__)
 

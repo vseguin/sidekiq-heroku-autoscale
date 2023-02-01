@@ -1,5 +1,4 @@
 .DS_Store
-Gemfile.lock
 .bundle
 .ruby-version
 .ruby-gemset
@@ -10,3 +9,4 @@ Gemfile.lock
 /bundle
 /node_modules
 /yarn-debug.log*
+.idea/
